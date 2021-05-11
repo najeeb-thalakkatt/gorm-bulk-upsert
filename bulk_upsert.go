@@ -48,9 +48,19 @@ func upsertObjSet(db *gorm.DB, objects []interface{}, excludeColumns ...string) 
 	for _, key := range sortedKeys(firstAttrs) {
 		dbColumns = append(dbColumns, gorm.ToColumnName(key))
 	}
+	cache := make(map[string]bool, len(dbColumns))
+	for _, col := range dbColumns {
+		cache[col] = true
+	}
 
 	duplicates := make([]string, 0)
+	pk := []string{}
 	for _, field := range mainScope.Fields() {
+		if field.IsPrimaryKey {
+			if _, exist := cache[field.StructField.DBName]; exist {
+				pk = append(pk, field.StructField.DBName)
+			}
+		}
 		_, hasForeignKey := field.TagSettingsGet("FOREIGNKEY")
 		_, isUnique := field.TagSettingsGet("UNIQUE")
 		_, hasUniqueIndex := field.TagSettingsGet("UNIQUE_INDEX")
@@ -64,9 +74,8 @@ func upsertObjSet(db *gorm.DB, objects []interface{}, excludeColumns ...string) 
 			continue
 		}
 
-		duplicates = append(duplicates, fmt.Sprintf("%s=VALUES(%s)", field.DBName, field.DBName))
+		duplicates = append(duplicates, fmt.Sprintf("%s=EXCLUDED.%s", field.DBName, field.DBName))
 	}
-
 	for _, obj := range objects {
 		objAttrs, err := extractMapValue(obj, excludeColumns)
 		if err != nil {
@@ -101,11 +110,11 @@ func upsertObjSet(db *gorm.DB, objects []interface{}, excludeColumns ...string) 
 		strings.Join(placeholders, ", "),
 	}
 	if len(duplicates) > 0 {
-		sql += " ON DUPLICATE KEY UPDATE %s"
+		sql += " ON CONFLICT (%s) DO UPDATE SET %s"
+		args = append(args, strings.Join(pk, ", "))
 		args = append(args, strings.Join(duplicates, ", "))
 	}
 	mainScope.Raw(fmt.Sprintf(sql, args...))
-
 	return db.Exec(mainScope.SQL, mainScope.SQLVars...).Error
 }
 
@@ -121,10 +130,8 @@ func extractMapValue(value interface{}, excludeColumns []string) (map[string]int
 		// Exclude relational record because it's not directly contained in database columns
 		_, hasForeignKey := field.TagSettingsGet("FOREIGNKEY")
 
-		if !containString(excludeColumns, field.Struct.Name) &&
-			field.StructField.Relationship == nil &&
-			!hasForeignKey &&
-			!field.IsIgnored {
+		if !containString(excludeColumns, field.Struct.Name) && field.StructField.Relationship == nil && !hasForeignKey &&
+			!field.IsIgnored && !(field.DBName == "id" && field.IsPrimaryKey) {
 			if field.Struct.Name == "CreatedAt" || field.Struct.Name == "UpdatedAt" {
 				attrs[field.DBName] = time.Now()
 			} else if field.StructField.HasDefaultValue && field.IsBlank {
