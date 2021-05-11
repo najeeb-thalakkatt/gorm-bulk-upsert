@@ -1,4 +1,4 @@
-# Gorm Bulk Upsert
+# Gorm Bulk Upsert (**** POSTGRES ****)
 
 `Gorm Bulk Upsert` is a library to implement bulk `INSERT ... ON DUPLICATE KEY UPDATE` using [gorm](https://github.com/jinzhu/gorm). Execute bulk upsert just by passing a slice of struct, as if you were using a gorm regularly.
 
