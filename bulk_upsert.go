@@ -16,17 +16,17 @@ import (
 //                  Embedding a large number of variables at once will raise an error beyond the limit of prepared statement.
 //                  Larger size will normally lead the better performance, but 2000 to 3000 is reasonable.
 // [excludeColumns] Columns you want to exclude from upsert. You can omit if there is no column you want to exclude.
-func BulkUpsert(db *gorm.DB, objects []interface{}, chunkSize int, excludeColumns ...string) error {
+func BulkUpsert(db *gorm.DB, objects []interface{}, chunkSize int, pk []string, excludeColumns ...string) error {
 	// Split records with specified size not to exceed Database parameter limit
 	for _, objSet := range splitObjects(objects, chunkSize) {
-		if err := upsertObjSet(db, objSet, excludeColumns...); err != nil {
+		if err := upsertObjSet(db, objSet, pk, excludeColumns...); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func upsertObjSet(db *gorm.DB, objects []interface{}, excludeColumns ...string) error {
+func upsertObjSet(db *gorm.DB, objects []interface{}, pk []string, excludeColumns ...string) error {
 	if len(objects) == 0 {
 		return nil
 	}
@@ -48,19 +48,9 @@ func upsertObjSet(db *gorm.DB, objects []interface{}, excludeColumns ...string) 
 	for _, key := range sortedKeys(firstAttrs) {
 		dbColumns = append(dbColumns, gorm.ToColumnName(key))
 	}
-	cache := make(map[string]bool, len(dbColumns))
-	for _, col := range dbColumns {
-		cache[col] = true
-	}
 
 	duplicates := make([]string, 0)
-	pk := []string{}
 	for _, field := range mainScope.Fields() {
-		if field.IsPrimaryKey {
-			if _, exist := cache[field.StructField.DBName]; exist {
-				pk = append(pk, field.StructField.DBName)
-			}
-		}
 		_, hasForeignKey := field.TagSettingsGet("FOREIGNKEY")
 		_, isUnique := field.TagSettingsGet("UNIQUE")
 		_, hasUniqueIndex := field.TagSettingsGet("UNIQUE_INDEX")
